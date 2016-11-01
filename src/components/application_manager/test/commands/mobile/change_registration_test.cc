@@ -419,6 +419,44 @@ TEST_F(ChangeRegistrationRequestTest, Run_IsLanguageSupportedByUITrue_SUCCESS) {
   command_->Run();
 }
 
+TEST_F(ChangeRegistrationRequestTest,
+       Run_IsLanguageSupportedByUIFalse_UNSUCCESS) {
+  CreateDefaultMessage(message_);
+  const utils::custom_string::CustomString kName(kAppName2);
+  application_set_.insert(app_);
+
+  EXPECT_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillOnce(Return(app_));
+  EXPECT_CALL(mock_app_manager_, applications())
+      .WillOnce(Return(applications_));
+  EXPECT_CALL(*app_, name()).WillOnce(ReturnRef(kName));
+
+  MessageSharedPtr vr_synonyms_message(CreateMessage());
+  (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms][0] =
+      kVrSynonyms2;
+  smart_objects::SmartObject& vr_synonyms =
+      (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms];
+  EXPECT_CALL(*app_, vr_synonyms())
+      .WillOnce(Return(static_cast<smart_objects::SmartObject*>(&vr_synonyms)));
+  EXPECT_CALL(mock_app_manager_, hmi_capabilities())
+      .WillRepeatedly(ReturnRef(mock_hmi_capabilities_));
+
+  smart_objects::SmartObject* ui_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::strings::hmi_display_language]);
+  EXPECT_CALL(mock_hmi_capabilities_, ui_supported_languages())
+      .WillOnce(Return(ui_languages));
+
+  EXPECT_CALL(mock_hmi_capabilities_, is_ui_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_vr_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_tts_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_app_manager_, GetNextHMICorrelationID()).Times(0);
+  command_->Run();
+}
+
 TEST_F(ChangeRegistrationRequestTest, Run_IsLanguageSupportedByVrTrue_SUCCESS) {
   CreateDefaultMessage(message_);
   (*message_)[am::strings::msg_params][am::strings::language] = 1;
@@ -465,6 +503,116 @@ TEST_F(ChangeRegistrationRequestTest, Run_IsLanguageSupportedByVrTrue_SUCCESS) {
   smart_objects::SmartObject* tts_languages = NULL;
   EXPECT_CALL(mock_hmi_capabilities_, tts_supported_languages())
       .WillOnce(Return(tts_languages));
+  EXPECT_CALL(mock_hmi_capabilities_, is_ui_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_vr_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_tts_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_app_manager_, GetNextHMICorrelationID()).Times(0);
+  command_->Run();
+}
+
+TEST_F(ChangeRegistrationRequestTest,
+       Run_IsLanguageSupportedByVrFalse_UNSUCCESS) {
+  CreateDefaultMessage(message_);
+  (*message_)[am::strings::msg_params][am::strings::language] = 1;
+
+  const utils::custom_string::CustomString kName(kAppName2);
+  application_set_.insert(app_);
+
+  EXPECT_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillOnce(Return(app_));
+  EXPECT_CALL(mock_app_manager_, applications())
+      .WillOnce(Return(applications_));
+  EXPECT_CALL(*app_, name()).WillOnce(ReturnRef(kName));
+
+  MessageSharedPtr vr_synonyms_message(CreateMessage());
+  (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms][0] =
+      kVrSynonyms2;
+  smart_objects::SmartObject& vr_synonyms =
+      (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms];
+  EXPECT_CALL(*app_, vr_synonyms())
+      .WillOnce(Return(static_cast<smart_objects::SmartObject*>(&vr_synonyms)));
+  EXPECT_CALL(mock_app_manager_, hmi_capabilities())
+      .WillRepeatedly(ReturnRef(mock_hmi_capabilities_));
+
+  (*vr_synonyms_message)[am::strings::msg_params]
+                        [am::strings::hmi_display_language][0] = 1;
+  (*vr_synonyms_message)[am::strings::msg_params]
+                        [am::strings::hmi_display_language][1] = 2;
+  smart_objects::SmartObject* ui_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::strings::hmi_display_language]);
+  EXPECT_CALL(mock_hmi_capabilities_, ui_supported_languages())
+      .WillOnce(Return(ui_languages));
+
+  smart_objects::SmartObject* vr_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::hmi_response::languages]);
+  EXPECT_CALL(mock_hmi_capabilities_, vr_supported_languages())
+      .WillOnce(Return(vr_languages));
+
+  EXPECT_CALL(mock_hmi_capabilities_, is_ui_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_vr_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_tts_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_app_manager_, GetNextHMICorrelationID()).Times(0);
+  command_->Run();
+}
+
+TEST_F(ChangeRegistrationRequestTest,
+       Run_IsLanguageSupportedByTTSFalse_UNSUCCESS) {
+  CreateDefaultMessage(message_);
+  (*message_)[am::strings::msg_params][am::strings::language] = 1;
+
+  const utils::custom_string::CustomString kName(kAppName2);
+  application_set_.insert(app_);
+
+  EXPECT_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillOnce(Return(app_));
+  EXPECT_CALL(mock_app_manager_, applications())
+      .WillOnce(Return(applications_));
+  EXPECT_CALL(*app_, name()).WillOnce(ReturnRef(kName));
+
+  MessageSharedPtr vr_synonyms_message(CreateMessage());
+  (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms][0] =
+      kVrSynonyms2;
+  smart_objects::SmartObject& vr_synonyms =
+      (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms];
+  EXPECT_CALL(*app_, vr_synonyms())
+      .WillOnce(Return(static_cast<smart_objects::SmartObject*>(&vr_synonyms)));
+  EXPECT_CALL(mock_app_manager_, hmi_capabilities())
+      .WillRepeatedly(ReturnRef(mock_hmi_capabilities_));
+
+  (*vr_synonyms_message)[am::strings::msg_params]
+                        [am::strings::hmi_display_language][0] = 1;
+  (*vr_synonyms_message)[am::strings::msg_params]
+                        [am::strings::hmi_display_language][1] = 2;
+  smart_objects::SmartObject* ui_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::strings::hmi_display_language]);
+  EXPECT_CALL(mock_hmi_capabilities_, ui_supported_languages())
+      .WillOnce(Return(ui_languages));
+
+  (*vr_synonyms_message)[am::strings::msg_params][am::hmi_response::languages]
+                        [0] = 1;
+  (*vr_synonyms_message)[am::strings::msg_params][am::hmi_response::languages]
+                        [1] = 2;
+
+  smart_objects::SmartObject* vr_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::hmi_response::languages]);
+  EXPECT_CALL(mock_hmi_capabilities_, vr_supported_languages())
+      .WillOnce(Return(vr_languages));
+
+  smart_objects::SmartObject* tts_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]);
+  EXPECT_CALL(mock_hmi_capabilities_, tts_supported_languages())
+      .WillOnce(Return(tts_languages));
+
   EXPECT_CALL(mock_hmi_capabilities_, is_ui_cooperating())
       .WillOnce(Return(false));
   EXPECT_CALL(mock_hmi_capabilities_, is_vr_cooperating())
@@ -544,6 +692,66 @@ TEST_F(ChangeRegistrationRequestTest, Run_IsNicknameAllowedFalse_UNSUCCESS) {
   utils::SharedPtr<usage_statistics::StatisticsManager> manager;
   EXPECT_CALL(policy_interface_, GetStatisticManager())
       .WillOnce(Return(manager));
+  EXPECT_CALL(mock_app_manager_, GetNextHMICorrelationID()).Times(0);
+  command_->Run();
+}
+
+TEST_F(ChangeRegistrationRequestTest,
+       Run_IsNicknameAllowedPolicyIdFalse_UNSUCCESS) {
+  CreateDefaultMessage(message_);
+  (*message_)[am::strings::msg_params][am::strings::language] = 1;
+
+  const utils::custom_string::CustomString kName(kAppName2);
+  application_set_.insert(app_);
+
+  EXPECT_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillRepeatedly(Return(app_));
+  EXPECT_CALL(mock_app_manager_, applications())
+      .WillOnce(Return(applications_));
+  EXPECT_CALL(*app_, name()).WillOnce(ReturnRef(kName));
+
+  MessageSharedPtr vr_synonyms_message(CreateMessage());
+  (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms][0] =
+      kVrSynonyms2;
+  smart_objects::SmartObject& vr_synonyms =
+      (*vr_synonyms_message)[am::strings::msg_params][am::strings::vr_synonyms];
+  EXPECT_CALL(*app_, vr_synonyms())
+      .WillOnce(Return(static_cast<smart_objects::SmartObject*>(&vr_synonyms)));
+  EXPECT_CALL(mock_app_manager_, hmi_capabilities())
+      .WillRepeatedly(ReturnRef(mock_hmi_capabilities_));
+
+  (*vr_synonyms_message)[am::strings::msg_params]
+                        [am::strings::hmi_display_language][0] = 1;
+  (*vr_synonyms_message)[am::strings::msg_params]
+                        [am::strings::hmi_display_language][1] = 2;
+  smart_objects::SmartObject* ui_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::strings::hmi_display_language]);
+  EXPECT_CALL(mock_hmi_capabilities_, ui_supported_languages())
+      .WillOnce(Return(ui_languages));
+
+  (*vr_synonyms_message)[am::strings::msg_params][am::hmi_response::languages]
+                        [0] = 1;
+  (*vr_synonyms_message)[am::strings::msg_params][am::hmi_response::languages]
+                        [1] = 2;
+  smart_objects::SmartObject* vr_languages =
+      &((*vr_synonyms_message)[am::strings::msg_params]
+                              [am::hmi_response::languages]);
+  EXPECT_CALL(mock_hmi_capabilities_, vr_supported_languages())
+      .WillOnce(Return(vr_languages));
+
+  EXPECT_CALL(mock_hmi_capabilities_, tts_supported_languages())
+      .WillOnce(Return(vr_languages));
+  EXPECT_CALL(mock_hmi_capabilities_, is_ui_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_vr_cooperating())
+      .WillOnce(Return(false));
+  EXPECT_CALL(mock_hmi_capabilities_, is_tts_cooperating())
+      .WillOnce(Return(false));
+
+  EXPECT_CALL(mock_app_manager_, GetPolicyHandler())
+      .WillRepeatedly(ReturnRef(policy_interface_));
+
   EXPECT_CALL(mock_app_manager_, GetNextHMICorrelationID()).Times(0);
   command_->Run();
 }

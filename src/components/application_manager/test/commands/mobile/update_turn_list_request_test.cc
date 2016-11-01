@@ -194,6 +194,31 @@ TEST_F(UpdateTurnListRequestTest, Run_NoTurnList_UNSUCCESS) {
   command_->Run();
 }
 
+TEST_F(UpdateTurnListRequestTest, Run_EmptyTurnList_UNSUCCESS) {
+  (*command_msg_)[am::strings::msg_params][am::strings::turn_list] =
+      smart_objects::SmartObject(smart_objects::SmartType_Array);
+
+  MockAppPtr mock_app(CreateMockApp());
+  EXPECT_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillOnce(Return(mock_app));
+
+  EXPECT_CALL(mock_app_manager_, GetPolicyHandler())
+      .WillOnce(ReturnRef(mock_policy_handler_));
+
+  EXPECT_CALL(mock_message_helper_,
+              ProcessSoftButtons((*command_msg_)[am::strings::msg_params],
+                                 Eq(mock_app),
+                                 Ref(mock_policy_handler_),
+                                 Ref(mock_app_manager_)))
+      .WillOnce(Return(mobile_result::SUCCESS));
+
+  EXPECT_CALL(
+      mock_app_manager_,
+      ManageMobileCommand(MobileResultCodeIs(mobile_result::INVALID_DATA), _));
+
+  command_->Run();
+}
+
 TEST_F(UpdateTurnListRequestTest, Run_ValidTurnList_SUCCESS) {
   const std::string kNavigationText = "valid_navigation_text";
 

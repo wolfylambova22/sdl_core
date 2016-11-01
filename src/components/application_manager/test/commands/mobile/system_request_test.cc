@@ -238,6 +238,91 @@ TEST_F(
   command->Run();
 }
 
+TEST_F(SystemRequestTest, Run_FileNameKeyNotFound_SendRequestToHMI) {
+  mobile_apis::RequestType::eType request_type = mobile_apis::RequestType::HTTP;
+  (*msg_)[am::strings::msg_params][am::strings::request_type] = request_type;
+  CommandPtr command(CreateCommand<SystemRequest>(msg_));
+  ON_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillByDefault(Return(app_));
+
+  EXPECT_CALL(policy_handler_mock,
+              IsRequestTypeAllowed(kPolicyAppId, request_type))
+      .WillOnce(Return(true));
+
+  EXPECT_CALL(mock_app_manager_settings_, system_files_path())
+      .WillRepeatedly(ReturnRef(kBinaryFolder));
+  EXPECT_CALL(mock_app_manager_, SaveBinary(_, _, _, _)).Times(0);
+
+  EXPECT_CALL(mock_app_manager_settings_, app_storage_folder())
+      .WillRepeatedly(ReturnRef(kStorageFolder));
+  ON_CALL(*app_, folder_name()).WillByDefault(Return("app_storage"));
+
+  EXPECT_CALL(
+      mock_app_manager_,
+      ManageMobileCommand(MobileResultCodeIs(mobile_result::REJECTED), _));
+
+  command->Run();
+}
+
+TEST_F(SystemRequestTest, OnEvent_ProcessingFileEmpty_UNSUCCESS) {
+  const std::string file_name = "IVSU";
+  mobile_apis::RequestType::eType request_type = mobile_apis::RequestType::HTTP;
+  (*msg_)[am::strings::msg_params][am::strings::request_type] = request_type;
+  (*msg_)[am::strings::msg_params][am::strings::file_name] = file_name;
+
+  CommandPtr command(CreateCommand<SystemRequest>(msg_));
+  ON_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillByDefault(Return(app_));
+
+  EXPECT_CALL(policy_handler_mock,
+              IsRequestTypeAllowed(kPolicyAppId, request_type))
+      .WillOnce(Return(true));
+
+  EXPECT_CALL(mock_app_manager_settings_, system_files_path())
+      .WillRepeatedly(ReturnRef(kBinaryFolder));
+  EXPECT_CALL(mock_app_manager_, SaveBinary(_, _, _, _)).Times(0);
+
+  EXPECT_CALL(mock_app_manager_settings_, app_storage_folder())
+      .WillRepeatedly(ReturnRef(kStorageFolder));
+  ON_CALL(*app_, folder_name()).WillByDefault(Return("app_storage"));
+
+  am::AppFile ap_file;
+  ap_file.is_download_complete = true;
+
+  // To avoid override of existing file,
+  // command append index as a suffix to
+  // the file name and increment it, each time
+  // when command saves a file.
+  std::ostringstream final_file_name;
+  final_file_name << SystemRequest::file_index() << file_name;
+
+  const std::string app_full_file_path = file_system::ConcatPath(
+      kStorageFolder, "app_storage", final_file_name.str());
+
+  std::ofstream test_stream(final_file_name.str());
+  test_stream << "test_file_IVSU\n";
+  test_stream.close();
+
+  EXPECT_CALL(*app_, GetFile(app_full_file_path))
+      .WillRepeatedly(Return(&ap_file));
+
+  command->Run();
+
+  Event event(Event::EventID::BasicCommunication_SystemRequest);
+
+  MessageSharedPtr event_msg(CreateMessage(smart_objects::SmartType_Map));
+
+  const hmi_apis::Common_Result::eType hmi_code =
+      hmi_apis::Common_Result::SUCCESS;
+  (*event_msg)[am::strings::params][am::hmi_response::code] = hmi_code;
+  smart_objects::SmartObject& unused = (*event_msg)[am::strings::msg_params];
+  // msg_params is unused in this case
+  UNUSED(unused)
+  event.set_smart_object(*event_msg);
+
+  command->on_event(event);
+}
+
 TEST_F(SystemRequestTest, OnEvent_SuccessResult_SuccessfulCommand) {
   Event event(Event::EventID::BasicCommunication_SystemRequest);
 
@@ -258,6 +343,25 @@ TEST_F(SystemRequestTest, OnEvent_SuccessResult_SuccessfulCommand) {
   EXPECT_CALL(mock_app_manager_,
               ManageMobileCommand(
                   MobileResponseIs(mobile_result::SUCCESS, info_, true), _));
+  command->on_event(event);
+}
+
+TEST_F(SystemRequestTest, OnEvent_ApplicationNotValid_UNSUCCESS) {
+  const hmi_apis::Common_Result::eType hmi_code =
+      hmi_apis::Common_Result::SUCCESS;
+
+  Event event(Event::EventID::BasicCommunication_SystemRequest);
+
+  MessageSharedPtr event_msg(CreateMessage(smart_objects::SmartType_Map));
+  (*event_msg)[am::strings::params][am::hmi_response::code] = hmi_code;
+
+  event.set_smart_object(*event_msg);
+
+  ON_CALL(mock_app_manager_, application(_))
+      .WillByDefault(Return(ApplicationSharedPtr()));
+
+  CommandPtr command(CreateCommand<SystemRequest>(msg_));
+
   command->on_event(event);
 }
 
@@ -310,6 +414,16 @@ TEST_F(SystemRequestTest, OnEvent_UnsuccesfulResult_SendUnsuccessfulCommand) {
   command->on_event(event);
 }
 
+TEST_F(SystemRequestTest, OnEvent_UnknownEvent_UNSUCCESS) {
+  EXPECT_CALL(mock_app_manager_, ManageMobileCommand(_, _)).Times(0);
+
+  CommandPtr command(CreateCommand<SystemRequest>(msg_));
+
+  Event event(hmi_apis::FunctionID::INVALID_ENUM);
+
+  command->on_event(event);
+}
+
 TEST_F(SystemRequestTest, Run_InvalidQueryAppData_GENERIC_ERROR) {
   const mobile_apis::RequestType::eType request_type =
       mobile_apis::RequestType::QUERY_APPS;
@@ -337,6 +451,31 @@ TEST_F(SystemRequestTest, Run_InvalidQueryAppData_GENERIC_ERROR) {
   EXPECT_CALL(
       mock_app_manager_,
       ManageMobileCommand(MobileResultCodeIs(mobile_result::GENERIC_ERROR), _));
+
+  command->Run();
+}
+
+TEST_F(SystemRequestTest, Run_InvalidQueryAppData_UNSUCCESS) {
+  const mobile_apis::RequestType::eType request_type =
+      mobile_apis::RequestType::QUERY_APPS;
+  (*msg_)[am::strings::msg_params][am::strings::file_name] = file_name_;
+  (*msg_)[am::strings::msg_params][am::strings::request_type] = request_type;
+
+  // json_data was not contain required parameter, `json::response`
+  const std::string json_data("{\"invalid_json_data\"{}");
+  const std::vector<uint8_t> binary_data(json_data.begin(), json_data.end());
+  (*msg_)[am::strings::params][am::strings::binary_data] = binary_data;
+  CommandPtr command(CreateCommand<SystemRequest>(msg_));
+
+  ON_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillByDefault(Return(app_));
+  ON_CALL(mock_app_manager_settings_, system_files_path())
+      .WillByDefault(ReturnRef(kBinaryFolder));
+  ON_CALL(mock_app_manager_settings_, app_storage_folder())
+      .WillByDefault(ReturnRef(kStorageFolder));
+
+  ON_CALL(mock_app_manager_, SaveBinary(_, kBinaryFolder, file_name_, 0))
+      .WillByDefault(Return(mobile_result::SUCCESS));
 
   command->Run();
 }

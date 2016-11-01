@@ -54,18 +54,64 @@ namespace commands_test {
 namespace mobile_commands_test {
 namespace alert_maneuver_request {
 
+namespace strings = am::strings;
+namespace hmi_response = am::hmi_response;
+
 using ::testing::_;
 using ::testing::Return;
 using ::testing::ReturnRef;
 namespace am = ::application_manager;
+using application_manager::MockMessageHelper;
 using am::commands::AlertManeuverRequest;
 using am::commands::MessageSharedPtr;
 using am::event_engine::Event;
 
+namespace {
+const uint32_t kAppId = 1u;
+const uint32_t kConnectionKey = 2u;
+}  // namespace
+
 typedef SharedPtr<AlertManeuverRequest> CommandPtr;
 
+enum CommandType { NAVI, TTS };
+
 class AlertManeuverRequestTest
-    : public CommandRequestTest<CommandsTestMocks::kIsNice> {};
+    : public CommandRequestTest<CommandsTestMocks::kIsNice> {
+ public:
+  AlertManeuverRequestTest()
+      : mock_message_helper_(*MockMessageHelper::message_helper_mock()) {}
+
+  void OnEventTestHelper(mobile_apis::Result::eType result_code,
+                         CommandType command_type,
+                         hmi_apis::Common_Result::eType tts_result,
+                         hmi_apis::Common_Result::eType navi_result,
+                         mobile_apis::Result::eType mobile_result_code,
+                         hmi_apis::FunctionID::eType function_id) {
+    MessageSharedPtr msg = CreateMessage();
+    (*msg)[strings::params][hmi_response::code] = result_code;
+    (*msg)[strings::msg_params] = SmartObject(smart_objects::SmartType_Map);
+    CommandPtr command(CreateCommand<AlertManeuverRequest>(msg));
+
+    if (command_type == CommandType::NAVI) {
+      EXPECT_CALL(mock_message_helper_, MobileToHMIResult(result_code))
+          .WillOnce(Return(navi_result));
+    } else if (command_type == CommandType::TTS) {
+      EXPECT_CALL(mock_message_helper_, MobileToHMIResult(result_code))
+          .WillOnce(Return(tts_result));
+    } else {
+      EXPECT_CALL(
+          mock_app_manager_,
+          ManageMobileCommand(MobileResultCodeIs(mobile_result_code), _));
+    }
+
+    Event event(function_id);
+    event.set_smart_object(*msg);
+
+    command->on_event(event);
+  }
+
+  MockMessageHelper& mock_message_helper_;
+};
 
 TEST_F(AlertManeuverRequestTest, Run_RequiredFieldsDoesNotExist_UNSUCCESS) {
   CommandPtr command(CreateCommand<AlertManeuverRequest>());
@@ -172,6 +218,34 @@ TEST_F(AlertManeuverRequestTest, Run_ProcessingResult_SUCCESS) {
                     .asInt()));
 }
 
+TEST_F(AlertManeuverRequestTest, Run_TTSIsOk_SUCCESS) {
+  MessageSharedPtr msg = CreateMessage(smart_objects::SmartType_Map);
+  (*msg)[am::strings::params][am::strings::connection_key] = kConnectionKey;
+  (*msg)[am::strings::msg_params][am::strings::soft_buttons] = 0;
+  (*msg)[am::strings::msg_params][am::strings::tts_chunks] = 0;
+  (*msg)[am::strings::msg_params][am::strings::tts_chunks][0]
+        [am::strings::text] = "text";
+
+  CommandPtr command(CreateCommand<AlertManeuverRequest>(msg));
+
+  MockAppPtr mock_app(CreateMockApp());
+  ON_CALL(mock_app_manager_, application(kConnectionKey))
+      .WillByDefault(Return(mock_app));
+
+  ON_CALL(mock_app_manager_, GetPolicyHandler())
+      .WillByDefault(
+          ReturnRef(*static_cast<policy::PolicyHandlerInterface*>(NULL)));
+
+  EXPECT_CALL(*(am::MockMessageHelper::message_helper_mock()),
+              ProcessSoftButtons(_, _, _, _))
+      .WillOnce(Return(mobile_apis::Result::SUCCESS));
+
+  EXPECT_CALL(*(am::MockMessageHelper::message_helper_mock()),
+              SubscribeApplicationToSoftButton(_, _, _));
+
+  command->Run();
+}
+
 TEST_F(AlertManeuverRequestTest, OnEvent_ReceivedUnknownEvent_UNSUCCESS) {
   CommandPtr command(CreateCommand<AlertManeuverRequest>());
   Event event(hmi_apis::FunctionID::INVALID_ENUM);
@@ -182,6 +256,88 @@ TEST_F(AlertManeuverRequestTest, OnEvent_ReceivedUnknownEvent_UNSUCCESS) {
             static_cast<mobile_apis::Result::eType>(
                 (*result_msg)[am::strings::msg_params][am::strings::result_code]
                     .asInt()));
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_AlertManeuverTTSInvalid_SUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::NAVI,
+                    hmi_apis::Common_Result::INVALID_ENUM,
+                    hmi_apis::Common_Result::SUCCESS,
+                    mobile_apis::Result::SUCCESS,
+                    hmi_apis::FunctionID::Navigation_AlertManeuver);
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_AlertManeuverTTSInvalid_UNSUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::NAVI,
+                    hmi_apis::Common_Result::INVALID_ENUM,
+                    hmi_apis::Common_Result::WRONG_LANGUAGE,
+                    mobile_apis::Result::SUCCESS,
+                    hmi_apis::FunctionID::Navigation_AlertManeuver);
+}
+
+TEST_F(AlertManeuverRequestTest,
+       OnEvent_AlertManeuverTTSUnsupResource_SUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::NAVI,
+                    hmi_apis::Common_Result::UNSUPPORTED_RESOURCE,
+                    hmi_apis::Common_Result::SUCCESS,
+                    mobile_apis::Result::WARNINGS,
+                    hmi_apis::FunctionID::Navigation_AlertManeuver);
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_AlertManeuverTTSWarnings_SUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::NAVI,
+                    hmi_apis::Common_Result::WARNINGS,
+                    hmi_apis::Common_Result::SUCCESS,
+                    mobile_apis::Result::WARNINGS,
+                    hmi_apis::FunctionID::Navigation_AlertManeuver);
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_TTSSpeakAlertInvalidEnum_SUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::TTS,
+                    hmi_apis::Common_Result::SUCCESS,
+                    hmi_apis::Common_Result::INVALID_ENUM,
+                    mobile_apis::Result::SUCCESS,
+                    hmi_apis::FunctionID::TTS_Speak);
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_TTSSpeakAlertWarnings_SUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::TTS,
+                    hmi_apis::Common_Result::SUCCESS,
+                    hmi_apis::Common_Result::WARNINGS,
+                    mobile_apis::Result::WARNINGS,
+                    hmi_apis::FunctionID::TTS_Speak);
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_TTSSpeakAlertWarnings_UNSUCCESS) {
+  OnEventTestHelper(mobile_apis::Result::SUCCESS,
+                    CommandType::TTS,
+                    hmi_apis::Common_Result::UNSUPPORTED_RESOURCE,
+                    hmi_apis::Common_Result::UNSUPPORTED_RESOURCE,
+                    mobile_apis::Result::WARNINGS,
+                    hmi_apis::FunctionID::TTS_Speak);
+}
+
+TEST_F(AlertManeuverRequestTest, OnEvent_TfTSSpeakAlertWarnings_Success) {
+  MessageSharedPtr msg = CreateMessage();
+  const uint32_t connection_key = 1u;
+  const uint32_t correlation_id = 2u;
+  (*msg)[strings::params][strings::connection_key] = connection_key;
+  (*msg)[strings::params][strings::correlation_id] = correlation_id;
+
+  CommandPtr command(CreateCommand<AlertManeuverRequest>(msg));
+
+  Event event(hmi_apis::FunctionID::TTS_OnResetTimeout);
+  event.set_smart_object(*msg);
+
+  EXPECT_CALL(mock_app_manager_,
+              updateRequestTimeout(connection_key, correlation_id, _));
+
+  command->on_event(event);
 }
 
 }  // namespace alert_maneuver_request
